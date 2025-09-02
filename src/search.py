@@ -1,8 +1,7 @@
 from langchain_postgres import PGVector
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain.prompts import PromptTemplate
-from langchain_core.runnables import RunnableLambda, RunnablePassthrough
-from sqlalchemy import create_engine
+from langchain_core.runnables import RunnableLambda, RunnablePassthrough, chain
 import os
 from dotenv import load_dotenv
 load_dotenv()
@@ -38,33 +37,26 @@ PERGUNTA DO USUÁRIO:
 
 RESPONDA A "PERGUNTA DO USUÁRIO"
 """
-# 0. Preparar Prompt
-prompt = PromptTemplate(input_variables=["contexto", "Pergunta"],template=PROMPT_TEMPLATE)
 
-# 1. Preparar embedding
-embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
-
-# 2. Abrir banco
-engine = create_engine(PGVECTOR_URL)
-db = PGVector(embeddings=embeddings,collection_name=COLLECTION_NAME,connection=engine,use_jsonb=True,)
-
-# Função para fechar o pool de conexões do engine
-def close_db_connection():
-    print("\nFechando conexão com o banco de dados...")
-    engine.dispose()
-    print("Conexão fechada.")
-
+@chain
 def build_context(pergunta: str):
+  # 1. Preparar embedding
+  embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
+
+  # 2. conectar no banco
+  db = PGVector(embeddings=embeddings,collection_name=COLLECTION_NAME,connection=PGVECTOR_URL,use_jsonb=True,)
+
+  # 3. fazer a busca vetorial
   relevant_items = db.similarity_search_with_score(pergunta, k=10)
   context = "\n".join([item.page_content for (item, score) in relevant_items])
-  return context
+  return {
+    "pergunta": pergunta,
+    "contexto": context
+  }
 
-def search_prompt(pergunta: str):
-  return (
-    {
-        "pergunta": RunnablePassthrough(),
-        "contexto": RunnableLambda(lambda x: build_context(x)),
-    }
-    | prompt
-)
+
+# 5. Montar o chain de prompt que possa ser invocado para cada pergunta
+def search_prompt(input):
+  prompt = PromptTemplate(input_variables=["contexto", "Pergunta"],template=PROMPT_TEMPLATE)
+  return build_context | prompt
 

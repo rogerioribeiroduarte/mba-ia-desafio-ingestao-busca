@@ -19,3 +19,7 @@ python src/ingest.py
 <pre>
 python src/chat.py
 </pre>
+7. Para encerrar o uso do chat entrar com "q" no campo da pergunta
+<pre>
+Entre com sua pergunta: q
+</pre>
